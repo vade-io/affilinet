@@ -1,7 +1,9 @@
 Affilinet
 ==========
 
-[![Build Status](https://travis-ci.org/opahk/affilinet.png)](https://travis-ci.org/opahk/affilinet)
+[![Build Status](https://travis-ci.org/vade-io/affilinet.svg?branch=master)](https://travis-ci.org/vade-io/affilinet)
+
+This is a gem to access (affili.net SOAP API)[https://www.affili.net/uk/developer-portal].
 
 License
 -------
