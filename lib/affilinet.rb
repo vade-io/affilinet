@@ -6,22 +6,23 @@ Dotenv.load("#{ENV['AFFILINET_ENV']}.env", '.env')
 module AffilinetAPI
   class API
     BASE_URL = "https://#{ENV['AFFILINET_HOST_PREFIX']}api.affili.net".freeze
+    API_VERSION = 'V2.0'
     # create a new webservice for each wsdl
     SERVICES = {
-      creative: '/V2.0/PublisherCreative.svc?wsdl',
-      product: '/V2.0/ProductServices.svc?wsdl',
-      inbox: '/V2.0/PublisherInbox.svc?wsdl',
-      account: '/V2.0/AccountService.svc?wsdl',
-      statistics: '/V2.0/PublisherStatistics.svc?wsdl',
-      program_list: '/V2.0/PublisherProgram.svc?wsdl'
+      creative: :PublisherCreative,
+      product: :ProductServices,
+      inbox: :PublisherInbox,
+      account: :AccountService,
+      statistics: :PublisherStatistics,
+      program_list: :PublisherProgram
     }.freeze
 
-    LOGON_SERVICE = '/V2.0/Logon.svc?wsdl'.freeze
+    LOGON_SERVICE = "/#{API_VERSION}/Logon.svc?wsdl".freeze
 
-    SERVICES.each do |key, wsdl|
+    SERVICES.each do |key, endpoint|
       define_method(key) do
         @services ||= {}
-        @services[wsdl] ||= AffilinetAPI::API::WebService.new(wsdl, @user, @password)
+        @services[endpoint] ||= AffilinetAPI::API::WebService.new(endpoint, @user, @password)
       end
     end
 
@@ -33,8 +34,8 @@ module AffilinetAPI
     end
 
     class WebService
-      def initialize(wsdl, user, password)
-        @wsdl = wsdl
+      def initialize(endpoint, user, password)
+        @endpoint = endpoint
         @user = user
         @password = password
       end
@@ -91,7 +92,7 @@ module AffilinetAPI
       end
 
       def flatten_result(method_name, result_hash)
-        keys = result_hash.keys.select { |k| k.start_with?('@xmlns') }
+        keys = result_hash.keys.select { |k| !k.start_with?('@xmlns') }
         return result_hash if keys.count != 1
 
         key_variations = soap_subject_variations method_name
@@ -113,7 +114,7 @@ module AffilinetAPI
       # only return a new driver if no one exists already
       #
       def driver
-        @driver ||= Savon.new(BASE_URL + @wsdl)
+        @driver ||= Savon.new(BASE_URL + "/#{API_VERSION}/#{@endpoint}.svc?wsdl")
       end
 
       def logon_driver
