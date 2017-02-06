@@ -40,6 +40,9 @@ module AffilinetAPI
         @password = password
       end
 
+      MISSING_PARAM_REGEXP = /(The (?<var>\S+) part of the request cannot be null|Expecting element '(?<var>[^']+)')/.freeze
+      ACTION_WITH_PARAMS_ON_ROOT = %w(SearchCreatives GetPayments).freeze
+
       # checks against the wsdl if method is supported and raises an error if not
       #
       # TODO we don't want ...RequestMessage for the creative service
@@ -49,27 +52,25 @@ module AffilinetAPI
 
         op = operation(method)
         camelized_name = method.to_s.camelize
-        op.body = if method == :get_payments || method == :search_creatives
-                    {
-                      "#{camelized_name}Request" => {
-                        'CredentialToken' => token
-                      }.merge(args.first)
-                    }
-                  else
-                    {
-                      "#{camelized_name}Request" => {
-                        'CredentialToken' => token,
-                        "#{camelized_name}RequestMessage" => args.first
-                      }
-                    }
-                  end
+        op.body = body_params camelized_name, args.first, token
         res = op.call
 
         result_hash = Hashie::Mash.new(res.body.values.first)
-        flatten_result method.to_s, parse_result(result_hash)
+        flatten_result method.to_s, parse_result(result_hash, op)
       end
 
       protected
+
+      def body_params(action_name, params, token)
+        body = { 'CredentialToken' => token }
+
+        if ACTION_WITH_PARAMS_ON_ROOT.include?(action_name)
+          { "#{action_name}Request" => body }.merge(params)
+        else
+          body["#{action_name}RequestMessage"] = params
+          { "#{action_name}Request" => body }
+        end
+      end
 
       # returns the subject the soap method handles
       def soap_subject(method_name)
@@ -102,13 +103,19 @@ module AffilinetAPI
         key.nil? ? result_hash : flatten_result(method_name, result_hash[key])
       end
 
-      def parse_result(result_hash)
+      def parse_result(result_hash, op)
         return result_hash if result_hash['faultstring'].nil?
 
-        missing_var = result_hash['faultstring'].match(/Expecting element '(?<var>[^']+)'/)
+        missing_var = result_hash['faultstring'].match(MISSING_PARAM_REGEXP)
         return result_hash unless missing_var
 
-        raise ArgumentError, "Parameter #{missing_var[:var].inspect} is required but wasn't given."
+        example_body = Savon::Envelope.new(op.instance_variable_get('@operation'),
+                                           op.example_header,
+                                           op.example_body).to_s
+        raise ArgumentError, "Parameter #{missing_var[:var].inspect} is required but " \
+                             "wasn't given.\n#{result_hash['faultstring']}\n" \
+                             "Given body was:\n\n#{op.build}\n" \
+                             "But body should have this structure:\n\n#{example_body}"
       end
 
       # only return a new driver if no one exists already
