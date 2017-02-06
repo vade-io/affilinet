@@ -39,15 +39,6 @@ module AffilinetAPI
         @password = password
       end
 
-      def parse_result(hash)
-        return hash if hash['faultstring'].nil?
-
-        missing_var = hash['faultstring'].match(/Expecting element '(?<var>[^']+)'/)
-        return hash unless missing_var
-
-        raise ArgumentError, "Parameter #{missing_var[:var].inspect} is required but wasn't given."
-      end
-
       # checks against the wsdl if method is supported and raises an error if not
       #
       # TODO we don't want ...RequestMessage for the creative service
@@ -72,10 +63,52 @@ module AffilinetAPI
                     }
                   end
         res = op.call
-        parse_result Hashie::Mash.new(res.body.values.first)
+
+        result_hash = Hashie::Mash.new(res.body.values.first)
+        flatten_result method.to_s, parse_result(result_hash)
       end
 
       protected
+
+      # returns the subject the soap method handles
+      def soap_subject(method_name)
+        method_name.sub(/^(get|create|update|send|set|delete)_/, '').singularize
+      end
+
+      # returns variations that may appear in a SOAP result
+      def soap_subject_variations(method_name)
+        singularized_name = soap_subject method_name
+        pluralized_name = singularized_name.pluralize
+
+        [
+          singularized_name,
+          "#{singularized_name}_record",
+          "#{singularized_name}_records",
+          pluralized_name,
+          "#{pluralized_name}_record",
+          "#{pluralized_name}_records"
+        ]
+      end
+
+      def flatten_result(method_name, result_hash)
+        keys = result_hash.keys.select { |k| k.start_with?('@xmlns') }
+        return result_hash if keys.count != 1
+
+        key_variations = soap_subject_variations method_name
+
+        key = (keys & key_variations).first
+
+        key.nil? ? result_hash : flatten_result(method_name, result_hash[key])
+      end
+
+      def parse_result(result_hash)
+        return result_hash if result_hash['faultstring'].nil?
+
+        missing_var = result_hash['faultstring'].match(/Expecting element '(?<var>[^']+)'/)
+        return result_hash unless missing_var
+
+        raise ArgumentError, "Parameter #{missing_var[:var].inspect} is required but wasn't given."
+      end
 
       # only return a new driver if no one exists already
       #
