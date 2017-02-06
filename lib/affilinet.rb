@@ -39,6 +39,15 @@ module AffilinetAPI
         @password = password
       end
 
+      def parse_result(hash)
+        return hash if hash['faultstring'].nil?
+
+        missing_var = hash['faultstring'].match(/Expecting element '(?<var>[^']+)'/)
+        return hash unless missing_var
+
+        raise ArgumentError, "Parameter #{missing_var[:var].inspect} is required but wasn't given."
+      end
+
       # checks against the wsdl if method is supported and raises an error if not
       #
       # TODO we don't want ...RequestMessage for the creative service
@@ -63,7 +72,7 @@ module AffilinetAPI
                     }
                   end
         res = op.call
-        Hashie::Mash.new res.body.values.first
+        parse_result Hashie::Mash.new(res.body.values.first)
       end
 
       protected
