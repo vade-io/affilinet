@@ -41,7 +41,7 @@ module AffilinetAPI
       end
 
       MISSING_PARAM_REGEXP = /(The (?<var>\S+) part of the request cannot be null|Expecting element '(?<var>[^']+)')/.freeze
-      ACTION_WITH_PARAMS_ON_ROOT = %w(SearchCreatives GetPayments).freeze
+      ACTION_WITH_PARAMS_ON_ROOT = %w(SearchCreatives GetPayments GetTransactions).freeze
 
       # checks against the wsdl if method is supported and raises an error if not
       #
@@ -65,7 +65,7 @@ module AffilinetAPI
         body = { 'CredentialToken' => token }
 
         if ACTION_WITH_PARAMS_ON_ROOT.include?(action_name)
-          { "#{action_name}Request" => body }.merge(params)
+          { "#{action_name}Request" => body.merge(params) }
         else
           body["#{action_name}RequestMessage"] = params
           { "#{action_name}Request" => body }
@@ -86,6 +86,7 @@ module AffilinetAPI
           singularized_name,
           "#{singularized_name}_record",
           "#{singularized_name}_records",
+          "#{singularized_name}_collection",
           pluralized_name,
           "#{pluralized_name}_record",
           "#{pluralized_name}_records"
@@ -93,7 +94,9 @@ module AffilinetAPI
       end
 
       def flatten_result(method_name, result_hash)
-        keys = result_hash.keys.select { |k| !k.start_with?('@xmlns') }
+        return result_hash unless result_hash.is_a? Hash
+
+        keys = result_hash.keys.select { |k| !k.start_with?('@xmlns') && k != 'total_records' }
         return result_hash if keys.count != 1
 
         key_variations = soap_subject_variations method_name
@@ -107,7 +110,7 @@ module AffilinetAPI
         return result_hash if result_hash['faultstring'].nil?
 
         missing_var = result_hash['faultstring'].match(MISSING_PARAM_REGEXP)
-        return result_hash unless missing_var
+        raise result_hash['faultstring'] unless missing_var
 
         example_body = Savon::Envelope.new(op.instance_variable_get('@operation'),
                                            op.example_header,
